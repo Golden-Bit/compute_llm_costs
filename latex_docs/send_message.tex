@@ -1,0 +1,291 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb}
+\usepackage{geometry}
+\geometry{a4paper, margin=1in}
+
+\begin{document}
+
+\section*{Modello di Costo per un Messaggio in Chat}
+
+\textbf{Di seguito è presentato il modello di calcolo del costo per singolo messaggio (domanda+risposta)}, includendo tutti i \emph{parametri} necessari a determinare la dimensione dell'\emph{input} al modello GPT (storia della chat, risultati di ricerca, ecc.) e dell'\emph{output} generato, oltre ai costi di \emph{retrieval} e \emph{salvataggio}. Questo \emph{focalizza la stima} esclusivamente sul \emph{costo di un messaggio} e \emph{non ripete} il resto dei calcoli mensili o dell'ingestion dei contenuti.
+
+\subsection*{1. Componenti di Costo}
+
+Per ciascun \textbf{messaggio} (inteso come ``turno utente + risposta AI''), il costo totale \(C_{\text{msg}}\) è dato dalla somma di:
+
+\[
+C_{\text{msg}} \;=\; C_{\text{LLM}} \;+\; C_{\text{retrieval}} \;+\; C_{\text{store}}.
+\]
+
+\begin{itemize}
+    \item \(\displaystyle C_{\text{LLM}}\): costo di inferenza del modello GPT-4o/Mini, calcolato in base ai \textbf{token di input} (prompt) e \textbf{token di output} (risposta).
+    \item \(\displaystyle C_{\text{retrieval}}\): costo relativo alla \textbf{ricerca vettoriale} (embedding della query, query su KBox, lettura chunk).
+    \item \(\displaystyle C_{\text{store}}\): costo di \textbf{scrivere} nel database il testo del messaggio e la risposta (o eventuali embedding aggiuntivi se indicizziamo la conversazione).
+\end{itemize}
+
+\subsection*{2. Calcolo dei Token di Input}
+
+\paragraph{2.1 Storia della Chat}
+Si assume che la chat mantenga un \textbf{numero massimo di coppie} di messaggi (utente+AI) in contesto --- ad esempio, \emph{25 coppie}. Se ciascuna coppia di messaggi ha una lunghezza media di \(T_{\text{history}}\) token per messaggio (sommando utente e AI, o separandoli a seconda del design), allora la parte di ``storia'' inclusa nel prompt vale:
+
+\begin{itemize}
+    \item Numero di messaggi di ``storia'' effettivamente inclusi: fino a \(25 \times 2 = 50\) messaggi, ma in molti casi si condensano i precedenti o si limita a 25 scambi totali.
+    \item Token totali di storia \(\displaystyle T_{\text{history\_total}}\) = \(\displaystyle (\#\text{ messaggi di contesto}) \times T_{\text{history}}\).
+\end{itemize}
+
+Se semplifichiamo assumendo 25 coppie complete e lunghezza media \(\bar{t}_{\text{hist}}\) per messaggio, i token ``storia'' sono:
+\[
+T_{\text{history\_total}} \;=\; 25 \;\times\; 2 \;\times\; \bar{t}_{\text{hist}}
+\;=\;
+50 \,\bar{t}_{\text{hist}}.
+\]
+\emph{(Se la chat è più breve, si userà un numero minore; se superasse 25 coppie, si taglia la parte più vecchia.)}
+
+\paragraph{2.2 Input Utente Corrente}
+Al di là della storia passata, l'utente invia il \textbf{nuovo messaggio} (la ``domanda''):
+\begin{itemize}
+    \item Se ha lunghezza media \(\bar{t}_{\text{user}}\) token, questa si somma direttamente al prompt.
+\end{itemize}
+
+\paragraph{2.3 Risultati di Retrieval dalle KBox}
+Se l'app fa \textbf{RAG} (Retrieval Augmented Generation), si calcolano i chunk di testo provenienti da una o più KBox. Supponiamo:
+\begin{itemize}
+    \item \(\displaystyle N_{\text{kbox}}\) = numero medio di KBox interrogate (es. 1,5).
+    \item \(\displaystyle R_{\text{per\_kbox}}\) = numero di chunk (``risultati'') recuperati per ogni KBox (es. 3).
+    \item \(\displaystyle \bar{t}_{\text{chunk}}\) = lunghezza media di ciascun chunk (es. 300 token).
+\end{itemize}
+
+Il totale di token ``di contesto'' aggiunti dal retrieval è:
+\[
+T_{\text{retrieval}}
+\;=\;
+N_{\text{kbox}}
+\;\times\;
+R_{\text{per\_kbox}}
+\;\times\;
+\bar{t}_{\text{chunk}}.
+\]
+\emph{(Esempio: 1,5 KBox $\times$ 3 chunk $\times$ 300 token = 1350 token di contesto da documenti.)}
+
+\paragraph{2.4 Totale Token di Input}
+Sommando storia + messaggio utente + chunk di retrieval:
+\[
+T_{\text{in}}
+\;=\;
+T_{\text{history\_total}}
+\;+\;
+\bar{t}_{\text{user}}
+\;+\;
+T_{\text{retrieval}}.
+\]
+
+\subsection*{3. Calcolo dei Token di Output}
+La risposta generata dal modello ha una lunghezza media \(\bar{t}_{\text{out}}\) (ad esempio $\sim$300 token). In caso di risposte più lunghe, ovviamente il costo cresce linearmente.
+
+\subsection*{4. Costo di Inferenza LLM (\(C_{\text{LLM}}\))}
+Avendo \(\displaystyle T_{\text{in}}\) token in input e \(\displaystyle T_{\text{out}}\) token in output, e definendo:
+\begin{itemize}
+    \item \(p_{\text{in}}\) = costo per token di input (es.: GPT-4o 0,005 \$/1k, GPT-4o Mini 0,00015 \$/1k),
+    \item \(p_{\text{out}}\) = costo per token di output (es.: GPT-4o 0,015 \$/1k, GPT-4o Mini 0,00060 \$/1k),
+\end{itemize}
+allora:
+\[
+C_{\text{LLM}}
+\;=\;
+\frac{T_{\text{in}}}{1000} \; p_{\text{in}}
+\;+\;
+\frac{T_{\text{out}}}{1000} \; p_{\text{out}}.
+\]
+\emph{(Se usiamo un modello \textbf{misto} con frazione $f$ di messaggi su GPT-4o full e $(1-f)$ su Mini, si fa la media pesata dei costi. Ma per \textbf{il singolo messaggio} in quell'istante useremo i parametri del modello selezionato.)}
+
+\subsection*{5. Costo di Retrieval (\(C_{\text{retrieval}}\))}
+\begin{itemize}
+    \item \textbf{Embedding} della query utente ($\sim \bar{t}_{\text{user}}$ token, costo $\sim \bar{t}_{\text{user}} \times C_{\text{embed}}$). Spesso < $10^{-5}$ \$.
+    \item \textbf{Query vettoriale} su Atlas (v3): $\sim 10^{-6}$--$10^{-5}$ \$.
+    \item \textbf{Lettura chunk} (d4): qualche microcentesimo su base di dimensioni ridotte.
+\end{itemize}
+In genere si approssima $C_{\text{retrieval}} \approx 10^{-5}$ \$ (trascurabile rispetto a $C_{\text{LLM}}$).
+
+\subsection*{6. Costo di Salvataggio (\(C_{\text{store}}\))}
+\begin{itemize}
+    \item \textbf{Scrittura} del nuovo messaggio utente + della risposta AI (2 doc), ciascuno $\sim \bar{t}_{\text{user}}$ e $\bar{t}_{\text{out}}$ token. In Atlas, 1--2 WPU totali $\sim 10^{-6}$ \$.
+    \item Eventuale \textbf{embedding} della conversazione se la si indicizza $\rightarrow$ qualche token in embedding. Spesso è anch'esso dell'ordine di $10^{-5}$ \$.
+\end{itemize}
+
+\subsection*{7. Formula Riassuntiva per il Costo del Messaggio}
+
+\[
+\boxed{
+C_{\text{msg}}
+\;=\;
+\underbrace{\frac{T_{\text{in}}}{1000}\,p_{\text{in}}
+\;+\;
+\frac{T_{\text{out}}}{1000}\,p_{\text{out}}}_{C_{\text{LLM}}}
+\;+\;
+C_{\text{retrieval}}
+\;+\;
+C_{\text{store}}.
+}
+\]
+
+Dove:
+\begin{itemize}
+    \item \(\displaystyle T_{\text{in}} \;=\; 50\,\bar{t}_{\text{hist}} \;+\; \bar{t}_{\text{user}} \;+\; \bigl(N_{\text{kbox}}\,\times\,R_{\text{per\_kbox}}\,\times\,\bar{t}_{\text{chunk}}\bigr)\) (nell'esempio con 25 coppie massime),
+    \item \(\displaystyle T_{\text{out}} \;\approx\; \bar{t}_{\text{out}},\)
+    \item \(C_{\text{retrieval}}\) e \(C_{\text{store}}\) sono piccoli (embedding query + ricerche + scritture DB), di solito $\sim 10^{-5}$ \$ complessivi.
+\end{itemize}
+
+\subsubsection*{Esempio Numerico}
+\begin{itemize}
+    \item \textbf{25 coppie} di messaggi in storia, ciascuno $\bar{t}_{\text{hist}} = 100$ token $\rightarrow 50 \times 100 = 5000$ token.
+    \item \textbf{Input utente} $\bar{t}_{\text{user}} = 50$ token.
+    \item \textbf{KBox}: $N_{\text{kbox}} = 1,5$, $R_{\text{per\_kbox}}=3$, $\bar{t}_{\text{chunk}} = 300$ $\rightarrow 1,5 \times 3 \times 300 = 1350$ token di contesto.
+    \item \textbf{Totale input} = $5000 + 50 + 1350 = 6400$ token.
+    \item \textbf{Output}: $\bar{t}_{\text{out}} = 300$ token (esempio).
+\end{itemize}
+
+\paragraph{Caso GPT-4o Full}
+Con $p_{\text{in}}=0,005$ e $p_{\text{out}}=0,015$:
+\[
+C_{\text{LLM}}
+= \frac{6400 \times 0{,}005}{1000}
+\;+\;
+\frac{300 \times 0{,}015}{1000}
+= 0{,}032 \;+\; 0{,}0045
+= 0{,}0365\;\$\;.
+\]
+(3,65 centesimi). A cui si aggiunge retrieval/store $\sim 10^{-5}$ \$ $\rightarrow$ totale $\sim 0{,}03651$ \$.
+
+\paragraph{Caso GPT-4o Mini}
+Con $p_{\text{in}}=0,00015$ e $p_{\text{out}}=0,00060$:
+\[
+C_{\text{LLM}}
+= \frac{6400 \times 0{,}00015}{1000}
+\;+\;
+\frac{300 \times 0{,}00060}{1000}
+= 0{,}00096 \;+\; 0{,}00018
+= 0{,}00114\;\$.
+\]
+(0,114 centesimi). Sommando retrieval/store $\approx 0{,}00115$ \$ per messaggio.
+
+\medskip
+\textbf{In sintesi}, questo è il \emph{modello dettagliato} per calcolare il costo di \textbf{un singolo messaggio in chat}, tenendo conto di:
+\begin{enumerate}
+    \item \textbf{Storia massima} (ad es. 25 coppie) $\rightarrow T_{\text{history\_total}}$.
+    \item \textbf{Input utente} $\rightarrow \bar{t}_{\text{user}}$.
+    \item \textbf{Contenuto di retrieval} (numero KBox $\times$ chunk) $\rightarrow T_{\text{retrieval}}$.
+    \item \textbf{Output} generato $\bar{t}_{\text{out}}$.
+    \item \textbf{Costi} di embedding query, database, salvataggio $(C_{\text{retrieval}} + C_{\text{store}})$.
+\end{enumerate}
+Il risultato finale è la formula (riportata nel riquadro) che, sostituendo i vari parametri, produce \textbf{il costo unitario} (in dollari) per la singola interazione (turno di domanda-risposta).
+
+\bigskip
+
+\section*{Descrizione della Formula Totale Generale}
+
+Vogliamo ora \textbf{descrivere tutti i parametri} coinvolti e presentare la \emph{formula generale} con una \emph{versione sintetica} e una \emph{versione estesa} che mostra ogni sotto-parametro nel dettaglio.
+
+\subsection*{Versione Sintetica}
+Indichiamo con:
+
+\begin{itemize}
+    \item \(T_{\text{in}}\): \textbf{token totali di input} (storia chat + messaggio utente + chunk retrieval),
+    \item \(T_{\text{out}}\): \textbf{token di output} (risposta generata),
+    \item \(p_{\text{in}}\), \(p_{\text{out}}\): \textbf{costi per token} di input/output (dipendono dal modello GPT-4o vs GPT-4o Mini),
+    \item \(C_{\text{retrieval}}\): \textbf{costo retrieval} (embedding query + query store + letture),
+    \item \(C_{\text{store}}\): \textbf{costo salvataggio} (scritture DB).
+\end{itemize}
+
+Allora la formula \emph{generica} è:
+\[
+C_{\text{msg}}
+= \underbrace{\frac{T_{\text{in}}}{1000} \; p_{\text{in}}
+\;+\;
+\frac{T_{\text{out}}}{1000} \; p_{\text{out}}}_\text{Costo LLM}
+\;+\;
+C_{\text{retrieval}}
+\;+\;
+C_{\text{store}}.
+\]
+
+\subsection*{Versione Estesa (con sotto-parametri)}
+Approfondiamo i \emph{dettagli} di ciascun termine:
+
+\begin{enumerate}
+    \item \(\displaystyle T_{\text{in}} =
+    T_{\text{history\_total}}
+    + \bar{t}_{\text{user}}
+    + \bigl(N_{\text{kbox}} \times R_{\text{per\_kbox}} \times \bar{t}_{\text{chunk}}\bigr) \)
+
+    \begin{itemize}
+        \item \(T_{\text{history\_total}} = (\text{\# coppie di storia} \times 2) \times \bar{t}_{\text{hist}}\), tipicamente $\le 25$ coppie,
+        \item \(\bar{t}_{\text{user}}\): lunghezza media del messaggio utente in token,
+        \item \(N_{\text{kbox}}\): numero di KBox coinvolte in media (es. 1,5),
+        \item \(R_{\text{per\_kbox}}\): chunk restituiti da ciascuna KBox (es. 3),
+        \item \(\bar{t}_{\text{chunk}}\): token medi per chunk (es. 300).
+    \end{itemize}
+
+    \item \(\displaystyle T_{\text{out}} = \bar{t}_{\text{out}}\), lunghezza media della risposta LLM in token (es. 300).
+
+    \item \(\displaystyle p_{\text{in}}, p_{\text{out}}\): costi per token \emph{in} e \emph{out} (dipende dal modello). Ad esempio:
+    \[
+    \begin{aligned}
+    \text{GPT-4o: } & p_{\text{in}} \approx 0,005 \text{ \$/1k},\quad p_{\text{out}} \approx 0,015 \text{ \$/1k},\\
+    \text{GPT-4o Mini: } & p_{\text{in}} \approx 0,00015 \text{ \$/1k},\quad p_{\text{out}} \approx 0,00060 \text{ \$/1k}.
+    \end{aligned}
+    \]
+
+    \item \(\displaystyle C_{\text{retrieval}}\) copre:
+    \begin{itemize}
+        \item l'embedding della query (costo $\approx \bar{t}_{\text{user}} \times C_{\text{embed}}$),
+        \item la query vettoriale (pochi \emph{RPU} su Atlas),
+        \item la lettura dei chunk dal DB (pochi \emph{RPU}).
+    \end{itemize}
+    Spesso stimato come costante di $\sim 10^{-5}$ \$.
+
+    \item \(\displaystyle C_{\text{store}}\) copre:
+    \begin{itemize}
+        \item la scrittura di messaggio utente + risposta nel DB (1--2 WPU),
+        \item eventuale embedding della conversazione.
+    \end{itemize}
+    Anch'esso $\sim 10^{-5}$ \$.
+\end{enumerate}
+
+\noindent
+\textbf{Formula Estesa Finale}:
+\[
+\boxed{
+C_{\text{msg}}
+=
+\Bigl[\bigl(T_{\text{history\_total}} + \bar{t}_{\text{user}} + N_{\text{kbox}} \times R_{\text{per\_kbox}} \times \bar{t}_{\text{chunk}}\bigr)\frac{p_{\text{in}}}{1000}
+\Bigr]
+\;+\;
+\Bigl[\bar{t}_{\text{out}} \times \frac{p_{\text{out}}}{1000}\Bigr]
+\;+\;
+C_{\text{retrieval}}
+\;+\;
+C_{\text{store}}.
+}
+\]
+
+\medskip
+
+\textbf{Significato dei Parametri} (riassunto):
+\begin{itemize}
+    \item \(\bar{t}_{\text{hist}}\): n. token medi per messaggio nella \emph{storia} (p.es. 100).
+    \item \(\bar{t}_{\text{user}}\): n. token medi di un messaggio utente (p.es. 50).
+    \item \(\bar{t}_{\text{out}}\): n. token medi della risposta LLM (p.es. 300).
+    \item \(N_{\text{kbox}}\): media di KBox coinvolte per query (p.es. 1,5).
+    \item \(R_{\text{per\_kbox}}\): chunk per KBox (p.es. 3).
+    \item \(\bar{t}_{\text{chunk}}\): n. token in un chunk (p.es. 300).
+    \item \(p_{\text{in}}, p_{\text{out}}\): costi per 1k token in input/output.
+    \item \(C_{\text{retrieval}}\): stima fissa per embedding della query e RPU (p.es. $10^{-5}$ \$).
+    \item \(C_{\text{store}}\): stima fissa per scritture DB e embedding conversazione (p.es. $10^{-5}$ \$).
+\end{itemize}
+
+\bigskip
+
+\noindent
+
+\end{document}

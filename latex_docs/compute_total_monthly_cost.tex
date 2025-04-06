@@ -1,0 +1,233 @@
+\documentclass[a4paper,10pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb}
+\usepackage{geometry}
+\geometry{a4paper, margin=1in}
+\usepackage{hyperref}
+
+\begin{document}
+
+\section*{Documentazione \LaTeX: Formula Globale per il Calcolo del Costo di un’Applicazione AI}
+
+\noindent
+Di seguito viene presentata una \textbf{documentazione in \LaTeX} che descrive, \emph{nel dettaglio}, la \emph{formula complessiva} per il calcolo del \emph{costo} di un’Applicazione AI basata su:
+\begin{itemize}
+    \item \textbf{MongoDB Atlas} (database e vector store),
+    \item \textbf{AWS Cognito} (autenticazione utenti),
+    \item \textbf{OpenAI GPT-4o \textit{vs.} GPT-4o Mini} (LLM per inferenza e embedding),
+    \item \textbf{Unstructured.io} (per processare documenti).
+\end{itemize}
+
+La trattazione integra tutte le informazioni delle ricerche precedenti, in particolare sull’uso e i \emph{costi unitari} dei provider, e su come \emph{comporre} il costo totale mensile per utente.
+
+\section*{1. Costo Mensile: Parametri, Struttura e Formula Finale}
+
+Vogliamo calcolare il \textbf{costo mensile} generato da un \emph{singolo utente} \textit{medio}, sommando diverse componenti:
+\[
+C_{\text{utente,mese}}
+\;=\;
+C_{\text{chat}}(\dots)
+\;+\;
+C_{\text{ingestion}}(\dots)
+\;+\;
+C_{\text{storage}}(\dots)
+\]
+dove:
+\begin{itemize}
+    \item \(\;C_{\text{chat}}\) rappresenta i costi dovuti all’uso in \emph{chat} (LLM usage),
+    \item \(\;C_{\text{ingestion}}\) i costi di caricamento/indicizzazione di file (documenti, immagini, video),
+    \item \(\;C_{\text{storage}}\) l’onere mensile per lo \emph{storage} su \emph{MongoDB Atlas}.
+\end{itemize}
+
+In generale, avremo:
+\[
+\boxed{
+C_{\text{utente,mese}}
+\;=\;
+\underbrace{N_{\text{msg}} \;\cdot\; C_{\text{msg}}}_{\text{Chat LLM usage}}
+\;+\;
+\underbrace{\sum C_{\text{upload}}}_{\text{Ingestion di documenti/media}}
+\;+\;
+\underbrace{S\,\times\,c_{\text{GB/mese}}}_{\text{Storage su DB}}
+}
+\]
+Nel seguito, \emph{dissezioniamo} le singole componenti e i \textbf{parametri} che le definiscono.
+
+\subsection*{1.1 Costo Chat: \(\,C_{\text{chat}}\)}
+
+Consideriamo un utente che \emph{mensilmente} invia \(N_{\text{msg}}\) messaggi in chat (es. 80).
+Ciascun \emph{messaggio} (turno utente+risposta AI) ha un costo:
+\[
+C_{\text{msg}}
+\;=\;
+C_{\text{LLM}} + C_{\text{retrieval}} + C_{\text{store}}
+\]
+dove:
+\begin{itemize}
+    \item \(C_{\text{LLM}}\) = \(\displaystyle \frac{T_{\text{in}}}{1000}\,p_{\text{in}} + \frac{T_{\text{out}}}{1000}\,p_{\text{out}}\),
+    \item \(C_{\text{retrieval}}\) copre embedding query \emph{(100--200 token?)} e query vector su Atlas (\(\sim10^{-5}\$)),
+    \item \(C_{\text{store}}\) copre scrittura \emph{2 doc} (messaggio+risposta) su DB (\(\sim10^{-6}\)–\(10^{-5}\$)).
+\end{itemize}
+
+\paragraph{Token in Input (\(T_{\text{in}}\))}
+\[
+T_{\text{in}}
+\;=\;
+(\text{\# coppie history}\times 2 \times \bar{t}_{\text{hist}})
+\;+\;
+\bar{t}_{\text{user}}
+\;+\;
+(N_{\text{kbox}}\times R_{\text{per\_kbox}}\times\bar{t}_{\text{chunk}})
+\]
+Così \(\bar{t}_{\text{hist}}\) = token per messaggio di \emph{storia}, \(\bar{t}_{\text{user}}\) = token \emph{input utente} nel messaggio corrente, e \(\bar{t}_{\text{chunk}}\) = token medi di un chunk di retrieval. \(N_{\text{kbox}}, R_{\text{per\_kbox}}\) = \# KBox e chunk per KBox.
+
+\paragraph{Token in Output (\(T_{\text{out}}\))}
+\[
+T_{\text{out}} = \bar{t}_{\text{out}}
+\]
+(es. 200--300 token medi in risposta LLM).
+
+\paragraph{Costi LLM Input/Output}
+Dipendono dal modello scelto:
+\begin{itemize}
+    \item GPT-4o (\emph{full}): \(p_{\text{in}}=0.005\$/1k, \; p_{\text{out}}=0.015\$/1k\),
+    \item GPT-4o \emph{Mini}: \(p_{\text{in}}=0.00015\$/1k, \; p_{\text{out}}=0.00060\$/1k\).
+\end{itemize}
+
+\paragraph{Retrieval e Store} (fissi).
+\[
+C_{\text{retrieval}}\approx 10^{-5}\$,\quad
+C_{\text{store}}\approx 10^{-5}\$.
+\]
+Il \emph{totale} \(\approx (T_{\text{in}}p_{\text{in}}+T_{\text{out}}p_{\text{out}})/1000 + 2\times10^{-5}\$.\)
+
+\subsection*{1.2 Costo Ingestion: \(\,C_{\text{ingestion}}\)}
+
+Questo \emph{include} i costi di \textbf{caricamento} di \emph{documenti}, \emph{immagini}, \emph{video}. In generale:
+\[
+C_{\text{ingest,mese}}
+\;=\;
+\sum_{\text{contenuti}} \Bigl[C_{\text{processing}} + C_{\text{embedding}} + C_{\text{DB}}\Bigr].
+\]
+
+\paragraph{Documenti (PDF)}
+\begin{itemize}
+    \item \emph{Unstructured} => 0.01\$/pagina (Hi-Res) o 0.001\$/pagina (Fast).
+    \item \emph{Chunking} => # chunk $\approx T_{\text{doc}}/\bar{T}_{\text{chunk}}$.
+    \item \emph{Embedding doc} => \(\frac{\bar{T}_{\text{chunk}}}{1000}\times c_{\text{embed}}\) per chunk.
+    \item \emph{Scrittura DB} => ~\(7.5\times10^{-6}\$ per chunk.
+\end{itemize}
+
+\paragraph{Immagini}
+\begin{itemize}
+    \item Possibile GPT-4o (o Mini) per \emph{caption} => (token img input + token out).
+    \item Embedding breve descrizione.
+\end{itemize}
+Totale \(\sim (0.002\$ \text{GPT-4o} \text{ or } 0.0001\$ \text{Mini})\).
+
+\paragraph{Video}
+\begin{itemize}
+    \item Estrazione frame => caption LLM + embedding (unificato).
+    \item Se 2 min, sampling 10s => \(\sim12\) frame => cost LLM \(\sim12 \times cost\_frame\).
+\end{itemize}
+
+\subsection*{1.3 Costo Storage Mensile: \(\,C_{\text{storage}}\)}
+
+Lo \emph{storage} su \textbf{MongoDB Atlas} costa \(\sim0.25\$/GB/mese\). Se l’utente conserva \(S\) GB di contenuti (doc, media, embedding):
+\[
+C_{\text{storage,mese}} = S \times c_{\text{GB}}.
+\]
+
+\subsection*{1.4 Formula Finale}
+
+\[
+\boxed{
+C_{\text{utente,mese}}
+=
+\underbrace{N_{\text{msg}} \cdot C_{\text{msg}}}_{\text{Chat usage}}
+\;+\;
+\underbrace{\sum_{\text{contenuti caricati}} C_{\text{upload}}}_{\text{Ingestion}}
+\;+\;
+\underbrace{S \cdot c_{\text{GB/mese}}}_{\text{Storage}}.
+}
+\]
+
+\section*{2. Dati di Costo Unitari (Provider)}
+
+Riportiamo i \emph{costi unitari} principali, come dalle specifiche:
+\begin{itemize}
+    \item \textbf{MongoDB Atlas}:
+    \begin{itemize}
+        \item Lettura RPU: \(\sim\$0,10\) / 1M,
+        \item Scrittura WPU: \(\sim\$1,25\) / 1M,
+        \item Storage: \(\sim\$0,25\) / GB-mese.
+    \end{itemize}
+
+    \item \textbf{AWS Cognito} (MAU based):
+    \begin{itemize}
+        \item 0--50k MAU: gratis,
+        \item 50k--100k: \(\sim\$0,0055\)/utente,
+        \item 100k--1M: \(\sim\$0,0046\)/utente, ecc.
+    \end{itemize}
+
+    \item \textbf{OpenAI GPT-4o}:
+    \begin{itemize}
+        \item input: \$0,005/1k,
+        \item output: \$0,015/1k
+    \end{itemize}
+
+    \item \textbf{OpenAI GPT-4o Mini}:
+    \begin{itemize}
+        \item input: \$0,00015/1k,
+        \item output: \$0,00060/1k
+    \end{itemize}
+
+    \item \textbf{OpenAI Embedding} (text-embedding-3-small):
+    \begin{itemize}
+        \item \$0,00002/1k
+    \end{itemize}
+
+    \item \textbf{Unstructured.io}:
+    \begin{itemize}
+        \item pipeline Fast: \$0,001/pagina,
+        \item pipeline Hi-Res: \$0,01/pagina.
+    \end{itemize}
+\end{itemize}
+
+\section*{3. Parametri e Significato}
+
+Elenchiamo \textbf{tutti i parametri} (con eventuali valori tipici):
+
+\begin{description}
+    \item[\(N_{\text{msg}}\)] numero di messaggi di chat dell’utente nel mese (es. 80).
+    \item[\(C_{\text{msg}}\)] costo di un singolo messaggio (vedi formula \emph{LLM}+retr+store).
+    \item[\(D,I,V\)] numero documenti, immagini, video caricati al mese.
+    \item[\(c_{\text{page}}\)] costo di processare 1 pagina (0,001\$ \emph{Fast} o 0,01\$ \emph{Hi-Res}).
+    \item[\(c_{\text{GB}}\)] costo di 1 GB di storage al mese (0,25\$).
+    \item[\(S\)] dimensione (GB) dei dati totali dell’utente su Atlas.
+    \item[\(\bar{T}_{\text{in}}\), \(\bar{T}_{\text{out}}\)] token input e output medi, se usiamo stima fissa (p.es. 1500 in, 300 out).
+    \item[\(\bar{T}_{\text{hist}}\), \(\bar{T}_{\text{user}}\)] token storia + user.
+    \item[\(p_{\text{in}}, p_{\text{out}}\)] costi LLM input/output, \emph{GPT-4o vs GPT-4o Mini}.
+    \item[\(\alpha\)] micro-costo retrieval+store (es. $2\times10^{-5}$).
+\end{description}
+
+\section*{4. Conclusione e Esempio}
+
+\noindent
+\textbf{Esempio rapido}:
+\begin{itemize}
+    \item \(\;N_{\text{msg}}=80,\;C_{\text{msg}}=0,0025\)\$ (mix GPT-4o \& Mini),
+    \item \(\;\sum C_{\text{upload}} \approx 0,0004\)\$ (poche decine di doc e img),
+    \item \(\;S=0,1\) GB, \(c_{\text{GB/mese}}=0,25\).
+\end{itemize}
+\[
+C_{\text{utente,mese}}=80\times0,0025 +0,0004 +0,1\times0,25=0,20+0,0004+0,025=0,2254\approx0,23\$.
+\]
+Quindi \(\sim0,23\)\$ al mese per utente \emph{medio} in questo scenario.
+
+\medskip
+
+\textbf{Sostenibilità}:
+Come mostrato, \emph{GPT-4o Mini} riduce drammaticamente i costi di inferenza, e lo \emph{storage} su \emph{Atlas} resta ragionevole. Anche con massima attività (1GB e molte chat) siamo entro 1--2\$/utente/mese.
+
+\end{document}

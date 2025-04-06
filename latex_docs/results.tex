@@ -1,0 +1,250 @@
+\documentclass[a4paper,12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{geometry}
+\geometry{margin=1in}
+
+\begin{document}
+
+\section*{Risultati degli Esperimenti di Caricamento (KBox) e di Chat}
+
+Di seguito presentiamo i risultati ottenuti da due set di esperimenti:
+\begin{enumerate}
+  \item \emph{Esperimenti di caricamento in KBox} (PDF, immagini, video)
+  \item \emph{Esperimenti di chat} (funzione \texttt{cost\_of\_message})
+\end{enumerate}
+I valori sono riportati in tabelle, \textbf{senza tralasciare nulla}, e tutti i numeri dell'output originale sono inclusi.
+
+\bigskip
+
+\hrule
+\subsection*{1. Esperimenti di Caricamento in KBox}
+
+\subsubsection*{1.1 Risultati per PDF (pipeline HiRes/Fast, numero pagine \{5,10,20,50,100\})}
+
+\[
+\begin{array}{|l|c|c|c|c|}
+\hline
+\textbf{Pipeline} & \textbf{Pages} & c_{\text{page}} & t_{\text{total}} & \textbf{Costo} \\
+\hline
+\text{HiRes} & 5 & 0.01 & 2500 & 0.050088\\
+\text{HiRes} & 10 & 0.01 & 5000 & 0.100175\\
+\text{HiRes} & 20 & 0.01 & 10000 & 0.200350\\
+\text{HiRes} & 50 & 0.01 & 25000 & 0.500875\\
+\text{HiRes} & 100 & 0.01 & 50000 & 1.001750\\
+\hline
+\text{Fast} & 5 & 0.001 & 2500 & 0.005088\\
+\text{Fast} & 10 & 0.001 & 5000 & 0.010175\\
+\text{Fast} & 20 & 0.001 & 10000 & 0.020350\\
+\text{Fast} & 50 & 0.001 & 25000 & 0.050875\\
+\text{Fast} & 100 & 0.001 & 50000 & 0.101750\\
+\hline
+\end{array}
+\]
+
+\noindent
+{\small
+(Osservazioni: \(
+c_{\text{page}} = 0.01\) per la pipeline HiRes, \(0.001\) per la Fast. Il valore \(t_{\text{total}}\) è stimato come \(\sim 500\times\text{Pages}\). Tutti i costi sono in dollari.)
+}
+
+\bigskip
+
+\subsubsection*{1.2 Risultati per Immagini (3 risoluzioni, 2 modelli)}
+
+\[
+\begin{array}{|c|c|c|}
+\hline
+\textbf{Risoluzione} & \textbf{Modello} & \textbf{Costo} \\
+\hline
+512\times512   & \text{GPT-4o}    & 0.002785\\
+512\times512   & \text{GPT-4oMini}& 0.000108\\
+1024\times1024 & \text{GPT-4o}    & 0.006609\\
+1024\times1024 & \text{GPT-4oMini}& 0.000222\\
+2048\times2048 & \text{GPT-4o}    & 0.021910\\
+2048\times2048 & \text{GPT-4oMini}& 0.000681\\
+\hline
+\end{array}
+\]
+
+\noindent
+{\small
+(“Modello” indica il LLM (GPT-4o o Mini) per generare la \emph{caption} dell'immagine; costi in dollari.)
+}
+
+\bigskip
+
+\subsubsection*{1.3 Risultati per Video (durata = 1 min, risoluzioni \{512,1024,2048\}, frame rate \{1.0,0.5,0.2,0.1\}, 2 modelli)}
+
+Ricordiamo che:
+\begin{itemize}
+\item Durata video = 1 minuto = 60s,
+\item \(\text{rate}\in\{1.0, 0.5, 0.2, 0.1\}\) fps,
+\item n\_frames = 60 $\times$ rate,
+\item sampling\_sec = 60 / n\_frames.
+\end{itemize}
+
+\paragraph{(a) Risoluzione 512$\times$512}
+
+\[
+\begin{array}{|c|c|c|c|}
+\hline
+\textbf{Rate (fps)} & \textbf{Modello} & \textbf{n\_frames} & \textbf{Costo}\\
+\hline
+1.0 & \text{GPT-4o}     & 60 & 0.121567\\
+1.0 & \text{GPT-4oMini} & 60 & 0.004162\\
+0.5 & \text{GPT-4o}     & 30 & 0.060788\\
+0.5 & \text{GPT-4oMini} & 30 & 0.002085\\
+0.2 & \text{GPT-4o}     & 12 & 0.024320\\
+0.2 & \text{GPT-4oMini} & 12 & 0.000838\\
+0.1 & \text{GPT-4o}     & 6  & 0.012164\\
+0.1 & \text{GPT-4oMini} & 6  & 0.000423\\
+\hline
+\end{array}
+\]
+
+\paragraph{(b) Risoluzione 1024$\times$1024}
+
+\[
+\begin{array}{|c|c|c|c|}
+\hline
+\textbf{Rate (fps)} & \textbf{Modello} & \textbf{n\_frames} & \textbf{Costo}\\
+\hline
+1.0 & \text{GPT-4o}     & 60 & 0.351068\\
+1.0 & \text{GPT-4oMini} & 60 & 0.011047\\
+0.5 & \text{GPT-4o}     & 30 & 0.175538\\
+0.5 & \text{GPT-4oMini} & 30 & 0.005527\\
+0.2 & \text{GPT-4o}     & 12 & 0.070219\\
+0.2 & \text{GPT-4oMini} & 12 & 0.002215\\
+0.1 & \text{GPT-4o}     & 6  & 0.035113\\
+0.1 & \text{GPT-4oMini} & 6  & 0.001111\\
+\hline
+\end{array}
+\]
+
+\paragraph{(c) Risoluzione 2048$\times$2048}
+
+\[
+\begin{array}{|c|c|c|c|}
+\hline
+\textbf{Rate (fps)} & \textbf{Modello} & \textbf{n\_frames} & \textbf{Costo}\\
+\hline
+1.0 & \text{GPT-4o}     & 60 & 1.269068\\
+1.0 & \text{GPT-4oMini} & 60 & 0.038587\\
+0.5 & \text{GPT-4o}     & 30 & 0.634538\\
+0.5 & \text{GPT-4oMini} & 30 & 0.019297\\
+0.2 & \text{GPT-4o}     & 12 & 0.253820\\
+0.2 & \text{GPT-4oMini} & 12 & 0.007723\\
+0.1 & \text{GPT-4o}     & 6  & 0.126914\\
+0.1 & \text{GPT-4oMini} & 6  & 0.003865\\
+\hline
+\end{array}
+\]
+
+\bigskip
+
+\hrule
+\subsection*{2. Esperimenti di Chat (\texttt{cost\_of\_message})}
+
+Parametri:
+\begin{itemize}
+ \item \texttt{max\_pairs} = \{10,20,30\}
+ \item \texttt{n\_kbox} = \{1,2,3\}
+ \item \texttt{r\_per\_kbox} = \{5,10,15\}
+ \item \texttt{model} = \{\text{GPT-4o}, \text{GPT-4oMini}\}
+\end{itemize}
+
+\noindent
+\textbf{Tabella dei risultati} (costo in dollari):
+
+{\small
+\[
+\begin{array}{|cccc|c|}
+\hline
+\textbf{max\_pairs} & \textbf{n\_kbox} & \textbf{r\_per\_kbox} & \textbf{Model} & \textbf{Costo}\\
+\hline
+10 & 1 & 5 & \text{GPT-4o}     & 0.022270\\
+10 & 1 & 5 & \text{GPT-4oMini} & 0.000732\\
+10 & 1 & 10 & \text{GPT-4o}    & 0.029770\\
+10 & 1 & 10 & \text{GPT-4oMini}& 0.000958\\
+10 & 1 & 15 & \text{GPT-4o}    & 0.037270\\
+10 & 1 & 15 & \text{GPT-4oMini}& 0.001182\\
+10 & 2 & 5 & \text{GPT-4o}     & 0.029770\\
+10 & 2 & 5 & \text{GPT-4oMini} & 0.000958\\
+10 & 2 & 10 & \text{GPT-4o}    & 0.044770\\
+10 & 2 & 10 & \text{GPT-4oMini}& 0.001408\\
+10 & 2 & 15 & \text{GPT-4o}    & 0.059770\\
+10 & 2 & 15 & \text{GPT-4oMini}& 0.001857\\
+10 & 3 & 5 & \text{GPT-4o}     & 0.037270\\
+10 & 3 & 5 & \text{GPT-4oMini} & 0.001182\\
+10 & 3 & 10 & \text{GPT-4o}    & 0.059770\\
+10 & 3 & 10 & \text{GPT-4oMini}& 0.001857\\
+10 & 3 & 15 & \text{GPT-4o}    & 0.082270\\
+10 & 3 & 15 & \text{GPT-4oMini}& 0.002533\\
+\hline
+20 & 1 & 5 & \text{GPT-4o}     & 0.032270\\
+20 & 1 & 5 & \text{GPT-4oMini} & 0.001032\\
+20 & 1 & 10 & \text{GPT-4o}    & 0.039770\\
+20 & 1 & 10 & \text{GPT-4oMini}& 0.001257\\
+20 & 1 & 15 & \text{GPT-4o}    & 0.047270\\
+20 & 1 & 15 & \text{GPT-4oMini}& 0.001483\\
+20 & 2 & 5 & \text{GPT-4o}     & 0.039770\\
+20 & 2 & 5 & \text{GPT-4oMini} & 0.001257\\
+20 & 2 & 10 & \text{GPT-4o}    & 0.054770\\
+20 & 2 & 10 & \text{GPT-4oMini}& 0.001708\\
+20 & 2 & 15 & \text{GPT-4o}    & 0.069770\\
+20 & 2 & 15 & \text{GPT-4oMini}& 0.002158\\
+20 & 3 & 5 & \text{GPT-4o}     & 0.047270\\
+20 & 3 & 5 & \text{GPT-4oMini} & 0.001483\\
+20 & 3 & 10 & \text{GPT-4o}    & 0.069770\\
+20 & 3 & 10 & \text{GPT-4oMini}& 0.002158\\
+20 & 3 & 15 & \text{GPT-4o}    & 0.092270\\
+20 & 3 & 15 & \text{GPT-4oMini}& 0.002832\\
+\hline
+30 & 1 & 5 & \text{GPT-4o}     & 0.042270\\
+30 & 1 & 5 & \text{GPT-4oMini} & 0.001332\\
+30 & 1 & 10 & \text{GPT-4o}    & 0.049770\\
+30 & 1 & 10 & \text{GPT-4oMini}& 0.001558\\
+30 & 1 & 15 & \text{GPT-4o}    & 0.057270\\
+30 & 1 & 15 & \text{GPT-4oMini}& 0.001783\\
+30 & 2 & 5 & \text{GPT-4o}     & 0.049770\\
+30 & 2 & 5 & \text{GPT-4oMini} & 0.001558\\
+30 & 2 & 10 & \text{GPT-4o}    & 0.064770\\
+30 & 2 & 10 & \text{GPT-4oMini}& 0.002007\\
+30 & 2 & 15 & \text{GPT-4o}    & 0.079770\\
+30 & 2 & 15 & \text{GPT-4oMini}& 0.002458\\
+30 & 3 & 5 & \text{GPT-4o}     & 0.057270\\
+30 & 3 & 5 & \text{GPT-4oMini} & 0.001783\\
+30 & 3 & 10 & \text{GPT-4o}    & 0.079770\\
+30 & 3 & 10 & \text{GPT-4oMini}& 0.002458\\
+30 & 3 & 15 & \text{GPT-4o}    & 0.102270\\
+30 & 3 & 15 & \text{GPT-4oMini}& 0.003132\\
+\hline
+\end{array}
+\]
+
+}
+
+\medskip
+
+\noindent
+(Interpretazione: ogni riga specifica i parametri \(\text{max\_pairs}\), \(\text{n\_kbox}\), \(\text{r\_per\_kbox}\), \(\text{model}\) e il costo ottenuto in dollari.)
+
+\bigskip
+
+\textbf{Osservazioni finali:}
+
+\begin{itemize}
+\item \textbf{PDF}: il costo cresce linearmente con il numero di pagine e dipende dal pipeline (HiRes vs.\ Fast).
+\item \textbf{Immagini}: il costo aumenta con la risoluzione. L'uso di GPT-4o per la caption risulta molto pi\`u costoso di GPT-4oMini (fattore $\sim 20$--$30\times$).
+\item \textbf{Video} (1 minuto): al crescere del frame rate e della risoluzione, il costo aumenta; GPT-4o rimane pi\`u dispendioso di GPT-4oMini.
+\item \textbf{Chat}: dipende da \(\text{max\_pairs}\), \(\text{n\_kbox}\), \(\text{r\_per\_kbox}\) e dal modello (GPT-4o / GPT-4oMini). Anche qui GPT-4o risulta $\sim 20$--$30\times$ pi\`u costoso.
+\end{itemize}
+
+Tutti i valori sono riportati \textbf{senza tralasciare nulla}, in strutture/tabelle adeguate.
+
+\bigskip
+\noindent \textbf{Fine.}
+
+\end{document}

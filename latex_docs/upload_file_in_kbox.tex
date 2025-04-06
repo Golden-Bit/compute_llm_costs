@@ -1,0 +1,366 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb}
+\usepackage{geometry}
+\geometry{a4paper, margin=1in}
+
+\begin{document}
+
+\section*{Costo di Caricamento e Indicizzazione di File e Media}
+
+Quando un utente vuole aggiungere documenti (PDF, DOC, immagini, video, ecc.) nella propria \emph{Knowledge Box} (KBox) o \emph{Vector Store} (MongoDB Atlas), l'applicazione esegue diversi \textbf{passi}:
+
+\begin{enumerate}
+    \item \textbf{Processamento iniziale} del file (lettura, estrazione testo, eventuale OCR o captioning se è un’immagine/video).
+    \item \textbf{Chunking} (divisione in blocchi di lunghezza moderata per migliorare la ricerca).
+    \item \textbf{Calcolo degli embedding} dei chunk (con modello dedicato di embedding).
+    \item \textbf{Salvataggio} dei chunk (testo e metadata) nel DB e \textbf{salvataggio} dei relativi vettori embedding nel Vector Store.
+\end{enumerate}
+
+Ciascuno di questi passi introduce un \textbf{costo}. Di seguito lo \emph{parametrizziamo} e poi presentiamo un \emph{esempio} per diversi tipi di file: PDF in pipeline Hi-Res, documento testuale standard (pipeline Fast), immagine e video.
+
+\section*{1. Parametri e Formule Generali}
+
+Definiamo una \textbf{formula generale} per il caricamento di un file (o media) che abbia:
+
+\begin{itemize}
+    \item \(N_{\text{pages}}\): numero di pagine (se testo/PDF). Oppure, se immagine, consideriamo 1 ``pagina''; se video, potrà essere equiparato a un certo numero di frame/pagine elaborate.
+    \item \(C_{\text{processing}}\): costo di \emph{processing} ``Unstructured'' (o analogo) per estrarre il testo (oppure, nel caso di immagini/video, la parte di OCR/captioning).
+    \item \(C_{\text{embedding}}\): costo di generazione embedding per i chunk ottenuti.
+    \item \(C_{\text{DB}}\): costo di scrittura dei chunk e dei vettori embedding su MongoDB Atlas.
+\end{itemize}
+
+\subsection*{1.1 Costo di Processamento (Unstructured)}
+Assumiamo due pipeline tipiche:
+
+\begin{enumerate}
+    \item \textbf{Fast Pipeline}: \$0,001 per pagina
+    \item \textbf{Hi-Res Pipeline}: \$0,01 per pagina
+\end{enumerate}
+
+\emph{(Fonte: Unstructured.io, oppure AWS Marketplace equivalenti)}
+
+\paragraph{Formula di base}
+\[
+C_{\text{processing}}
+=
+N_{\text{pages}} \times c_{\text{page}},
+\]
+dove \(c_{\text{page}} \in \{0,001, \; 0,01\}\) a seconda di Fast o Hi-Res.
+
+\subsection*{1.2 Chunking}
+Il file di testo (ottenuto da PDF, DOC, o da un OCR) viene suddiviso in blocchi di lunghezza \(\bar{T}_{\text{chunk}}\) token. Se il testo complessivo di un file è \(T_{\text{total}}\) token, il \textbf{numero di chunk}:
+\[
+N_{\text{chunk}}
+=
+\left\lceil
+\frac{T_{\text{total}}}{\bar{T}_{\text{chunk}}}
+\right\rceil.
+\]
+\emph{(In alcuni casi, 1 chunk per pagina se $\sim$500 token/pagina.)}
+
+\subsection*{1.3 Calcolo degli Embedding}
+Per ogni chunk si genera un embedding (es.\ con \emph{text-embedding-3-small}).
+\begin{itemize}
+    \item \textbf{Costo} per 1k token = \$0,00002 (o meno).
+\end{itemize}
+Se un chunk tipico ha \(\bar{T}_{\text{chunk}}\) token, allora il \textbf{costo embedding} di 1 chunk:
+\[
+C_{\text{embed\_chunk}}
+=
+\frac{\bar{T}_{\text{chunk}}}{1000}
+\;\times\;
+c_{\text{embed}}.
+\]
+Moltiplicando per $N_{\text{chunk}}$:
+\[
+C_{\text{embedding}}
+=
+N_{\text{chunk}}
+\;\times\;
+C_{\text{embed\_chunk}}.
+\]
+
+\subsection*{1.4 Costo di Scrittura DB e Vector Store}
+\begin{itemize}
+    \item Ogni chunk (testo + metadata) si inserisce in una collezione DB, con un costo di scrittura $\approx d3$.
+    \item Ogni embedding (es.\ 1536 dimensioni) occupa $\sim 6$KB: scrittura su Vector Store con $\approx 6$ WPU.
+\end{itemize}
+\[
+C_{\text{DB\_1\_chunk}}
+=
+\underbrace{\frac{1}{10^6}\times C_{\text{WPU}}}_{\text{testo}}
+\;+\;
+\underbrace{\frac{\text{embedding\_KB}}{10^6}\times C_{\text{WPU}}}_{\text{vettore}}
+\]
+Se \(\text{embedding\_KB} \approx 6\) e \(C_{\text{WPU}} \approx 1,25\) \$, allora scrivere 1 chunk con embedding costerà $\approx 7{,}5\times 10^{-6}\$.
+
+Per semplicità:
+\[
+C_{\text{DB}}
+=
+N_{\text{chunk}}
+\;\times\;
+C_{\text{DB\_1\_chunk}}.
+\]
+
+\subsection*{1.5 Formula di Caricamento di un File}
+Combinando il tutto:
+
+\[
+\boxed{
+C_{\text{upload\_file}}
+=
+C_{\text{processing}}
+\;+\;
+C_{\text{embedding}}
+\;+\;
+C_{\text{DB}}
+}
+\]
+dove:
+\[
+\begin{aligned}
+C_{\text{processing}} &= N_{\text{pages}} \times c_{\text{page}}, \\[6pt]
+N_{\text{chunk}} &= \left\lceil \frac{T_{\text{total}}}{\bar{T}_{\text{chunk}}} \right\rceil, \\[6pt]
+C_{\text{embedding}}
+&= N_{\text{chunk}}
+\;\times\;
+\frac{\bar{T}_{\text{chunk}}}{1000}\, c_{\text{embed}},\\[6pt]
+C_{\text{DB}}
+&= N_{\text{chunk}}
+\;\times\;
+C_{\text{DB\_1\_chunk}}.
+\end{aligned}
+\]
+
+\section*{2. Caso di Documenti PDF (Hi-Res vs.\ Standard)}
+
+\subsection*{2.1 Caso ``PDF con Pipeline Hi-Res''}
+\begin{itemize}
+    \item \(c_{\text{page}} = 0,01\$ (\emph{Hi-Res}).
+    \item Esempio: $N_{\text{pages}}=10$.
+\end{itemize}
+\[
+C_{\text{processing}}
+=
+10 \;\times\; 0{,}01 = 0{,}10\$\quad
+(\text{= 10 cent totali}).
+\]
+Se ogni pagina $\sim 500$ token, allora $T_{\text{total}}=5000$ token su 10 pagine, e con chunk da 500 token: $N_{\text{chunk}}=10$.
+
+\paragraph{Embedding}
+\[
+C_{\text{embed\_chunk}}
+=
+\frac{500}{1000} \;\times\; 0{,}00002
+=
+0{,}00001\$ \quad(1\times 10^{-5}).
+\]
+Dieci chunk $\to 10 \;\times 10^{-5} = 10^{-4}\$.
+
+\paragraph{DB}
+Scrivere 1 chunk con embedding $\approx 7,5\times10^{-6}\$; per 10 chunk: $7,5\times10^{-5}\$.
+
+\[
+C_{\text{upload\_file}}
+=
+0{,}10 + 0{,}0001 + 0{,}000075
+\approx
+0{,}100175
+\approx
+0{,}10\$.
+\]
+\emph{Quasi tutto dovuto alla pipeline Hi-Res.}
+
+\subsection*{2.2 Caso ``Documento Standard'' (Fast Pipeline)}
+\begin{itemize}
+    \item $c_{\text{page}}=0{,}001\$ (\emph{Fast}).
+    \item Esempio: 10 pagine $\to 10\times0,001 = 0,01\$ di processing$.
+\end{itemize}
+
+Stessa logica di embedding e DB: $0,0001 + 0,000075 = 0,000175\$.
+
+\[
+C_{\text{upload\_file}}
+\approx
+0{,}01 + 0{,}000175 = 0{,}010175
+\approx
+0{,}0102\$.
+\]
+
+\section*{3. Caso di File Multimediali (Immagini e Video)}
+
+\noindent
+\textbf{Immagini:} potremmo usare GPT-4o (o GPT-4o Mini) per ricavare una descrizione testuale (``caption''). L'immagine diventa input visivo, convertito in token.\\
+\textbf{Video:} estraiamo alcuni frame, ognuno trattato come un'immagine.
+
+\subsection*{3.1 Caricamento di un’Immagine}
+
+\paragraph{Passi:}
+\begin{enumerate}
+    \item \textbf{Caption}: chiamata LLM in input con $\approx T_{\text{img}}$ token (dipende da dimensione, es.\ 512$\times$512 $\to$ 255 token).
+    \item \textbf{Output}: testo di descrizione (es.\ 50--100 token).
+    \item \textbf{Embedding}: dei $\sim 100$ token descrizione.
+    \item \textbf{Scrittura}: salviamo descrizione e embedding nel DB.
+\end{enumerate}
+
+\paragraph{Formula}
+\[
+C_{\text{upload\_img}}
+=
+C_{\text{LLM\_caption}}
++ C_{\text{embed}}
++ C_{\text{DB}},
+\]
+dove
+\[
+C_{\text{LLM\_caption}}
+=
+\frac{T_{\text{img}}}{1000}\,p_{\text{in}}
++
+\frac{T_{\text{descr}}}{1000}\,p_{\text{out}},
+\]
+\[
+C_{\text{embed}}
+\approx
+\frac{T_{\text{descr}}}{1000}\times c_{\text{embed}},\quad
+C_{\text{DB}}
+\approx 7,5\times10^{-6}\$ \text{ (per embedding da 6KB)}.
+\]
+
+\paragraph{Esempio} (con GPT-4o)
+\[
+T_{\text{img}}=255,\quad
+T_{\text{descr}}=100,\quad
+p_{\text{in}}=0{,}005,\quad
+p_{\text{out}}=0{,}015.
+\]
+\[
+C_{\text{LLM\_caption}}
+=
+\frac{255}{1000}\times0{,}005
++
+\frac{100}{1000}\times0{,}015
+=
+0{,}001275+0{,}0015
+=
+0{,}002775\$.
+\]
+Embedding 100 token $\to 2\times10^{-6}\$; DB scrittura $\sim7,5\times10^{-6}\$.
+Totale $\approx 0{,}00278\$ ($\sim 0,28 cent).
+
+\textbf{(Se GPT-4o Mini)}, costi scendono di ~30$\times$, con input 255$\times$0,00015 + output 100$\times$0,00060 $\approx 0,00009825\$.
+
+\subsection*{3.2 Caricamento di un Video}
+
+\paragraph{Passi:}
+\begin{enumerate}
+    \item \textbf{Estrazione Frame}: supponiamo di estrarre 1 frame ogni X secondi, generando $N_{\text{frame}}$ immagini.
+    \item \textbf{Caption} per ciascun frame, come se fosse un'immagine.
+    \item \textbf{Embedding}: potremmo unire le caption in un testo unico, generando un embedding, o creare embedding per ogni frame.
+    \item \textbf{Scrittura}: su DB.
+\end{enumerate}
+
+\paragraph{Formula}
+\[
+C_{\text{video}}
+\approx
+N_{\text{frame}}
+\times
+C_{\text{LLM\_frame}}
++
+C_{\text{embed}}
++
+C_{\text{DB}}.
+\]
+
+\paragraph{Esempio}
+\begin{itemize}
+    \item Video 2 min, estraiamo 1 frame/10 s $\to N_{\text{frame}}=12$.
+    \item GPT-4o per caption di ogni frame (ipotizziamo $\sim0{,}0027\$) $\to 12\times0{,}0027=0{,}0324\$.
+    \item Testo totale 12 caption $\times$ 50 token = 600 token $\to$ embedding $=600/1000\times0{,}00002=1{,}2\times10^{-5}\$.
+    \item DB scrittura embedding $\sim7{,}5\times10^{-6}\$.
+\end{itemize}
+Totale $\approx 0{,}032417\$ (\sim 3,24 cent). \textbf{(Se GPT-4o Mini)}, costi scendono di un fattore ~10--30.
+
+\section*{4. Conclusioni ed Esempi Riassuntivi}
+
+\textbf{Caricamento di documenti} (testuali):
+\begin{itemize}
+    \item \emph{Hi-Res} (\$0,01/pagina) domina i costi (\$0,10 per 10 pagine).
+    \item \emph{Fast} (\$0,001/pagina) scende a millesimi.
+\end{itemize}
+
+\textbf{Caricamento di immagini}:
+\begin{itemize}
+    \item Principale costo se usiamo GPT-4o per caption (fino a ~0,002--0,003\$ per immagine).
+    \item Embedding e DB microcentesimi.
+    \item GPT-4o Mini: $\sim0,0001\$ per immagine.
+\end{itemize}
+
+\textbf{Caricamento di video}:
+\begin{itemize}
+    \item Diviso in ``frame extraction + captioning'' (nessun cenno ad altro).
+    \item Esempio 2 min, 12 frame, GPT-4o $\approx0,0324\$ tot (caption). Embedding e DB trascurabili. GPT-4o Mini riduce di ~20$\times$.
+\end{itemize}
+
+\paragraph{Formula Generale} per un file (testo o media) caricabile:
+\[
+\boxed{
+C_{\text{upload\_file}}
+=
+C_{\text{process}}
++
+N_{\text{chunk}}
+\times
+\biggl[
+ \frac{\bar{T}_{\text{chunk}}}{1000} \, c_{\text{embed}}
+ + C_{\text{DB\_chunk}}
+\biggr]
++
+(\text{costo extra se immagine/video}).
+}
+\]
+Dove
+\begin{itemize}
+    \item $C_{\text{process}} = N_{\text{pages}} \times c_{\text{page}}$ (0,001\$ o 0,01\$).
+    \item $N_{\text{frame}} = \frac{\text{durata\_s}}{\text{sampling\_sec}}$ per i video.
+    \item $C_{\text{LLM\_caption}} = \Bigl(\frac{T_{\text{img}}}{1000}\Bigr) p_{\text{in}} + \Bigl(\frac{T_{\text{descr}}}{1000}\Bigr) p_{\text{out}}$ per ogni immagine/frame.
+\end{itemize}
+
+\subsection*{Esempio Finale Riassuntivo}
+
+\begin{center}
+\begin{tabular}{|l|c|c|c|c|c|c|}
+\hline
+\textbf{Tipo File} & \textbf{Pagine/Frame} & \textbf{Pipeline/Modello} & \textbf{Costo Process.} & \textbf{Costo LLM} & \textbf{Embedding + DB} & \textbf{Totale}\\
+\hline
+\textbf{PDF 10 pag (Hi-Res)} & 10 & 0,01\$/pagina & 0,10\$ & -- & $\sim0,000175\$ & 0,10018\$ \\ \hline
+\textbf{PDF 10 pag (Fast)}   & 10 & 0,001\$/pagina & 0,01\$ & -- & $\sim0,000175\$ & 0,01018\$ \\ \hline
+\textbf{Immagine (GPT-4o)}   & 1 & $(p_{\text{in}}=0,005; p_{\text{out}}=0,015)$ & -- & $\sim0,0028\$ & $<0,00002\$ & 0,00282\$ \\ \hline
+\textbf{Immagine (Mini)}     & 1 & $(p_{\text{in}}=0,00015;p_{\text{out}}=0,00060)$ & -- & $\sim0,0001\$ & $<0,00002\$ & 0,00012\$ \\ \hline
+\textbf{Video 2 min (GPT-4o)} & 12 frame & $\sim0,0027\$ \text{ x frame}$ & -- & $12\times0,0027=0,0324\$ & $\sim0,00002\$ & $\sim0,03242\$ \\ \hline
+\textbf{Video 2 min (Mini)}   & 12 frame & $\sim0,0001\$ \text{ x frame}$ & -- & $12\times0,0001=0,0012\$ & $\sim0,00002\$ & $\sim0,00122\$ \\ \hline
+\end{tabular}
+\end{center}
+
+\medskip
+A
+Come si vede:
+\begin{itemize}
+    \item \emph{PDF} con pipeline Hi-Res: \$0,10\ldots\$0,20 in base al numero di pagine (qui 10).
+    \item \emph{PDF} con pipeline Fast: 10$\times$ meno.
+    \item \emph{Immagini e video}: costo imputabile quasi tutto alle \emph{chiamate LLM} (GPT-4o o GPT-4o Mini) per ottenere le descrizioni. Embedding + DB restano microcentesimi.
+\end{itemize}
+
+\textbf{In conclusione}, il \emph{costo di caricamento} di file (testo/immagini/video) è spesso dominato:
+\begin{itemize}
+    \item Dai \textbf{cost per pagina} (se si usa SaaS Unstructured).
+    \item Dalle \textbf{chiamate GPT-4o} (se facciamo caption su immagini/video).
+    \item L'\textbf{embedding} e DB incidono in microcentesimi.
+\end{itemize}
+Pertanto, un PDF grande con pipeline Hi-Res rimane su alcuni centesimi (0,01\$ $\times$ pagine), mentre un PDF standard (Fast) scende a millesimi. Per le immagini e i video \emph{dipende dal modello LLM} usato per la descrizione: GPT-4o può costare $\sim0,003\$$/immagine, GPT-4o Mini $\sim0,0001\$$. \\
+Lo \textbf{storage} finale su MongoDB inciderà poi su base mensile (0,25\$/GB), se l'utente carica molti MB/GB di contenuti multimediali.
+
+\end{document}
